@@ -9,11 +9,10 @@ export const connectDB = async () => {
     console.log("MongoDB підключено! ✅");
   } catch (error) {
     console.error("Помилка підключення до MongoDB:", error);
-    process.exit(1);
+    console.log("⚠️ Бот працює без MongoDB");
   }
 };
 
-// Схема оголошення
 const announcementSchema = new mongoose.Schema({
   telegramUserId: Number,
   telegramUsername: String,
@@ -28,7 +27,6 @@ const announcementSchema = new mongoose.Schema({
   isActive: { type: Boolean, default: true }
 });
 
-// Індекси для пошуку
 announcementSchema.index({ searchFrom: "text", searchTo: "text" });
 
 export const Announcement = mongoose.model("Announcement", announcementSchema);

@@ -21,12 +21,30 @@ export interface AIResult {
   aiText: string;
 }
 
-export const processWithAI = async (userText: string): Promise<AIResult | null> => {
+const removePhoneNumbers = (text: string): string => {
+  return text
+    .replace(/(\+?38)?[\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+};
+
+export const processWithAI = async (userText: string, username?: string): Promise<AIResult | null> => {
   try {
-    const result = await model.generateContent(userText);
+    const textWithContact = username 
+      ? userText + "\n\nКонтакт: @" + username
+      : userText;
+    
+    const result = await model.generateContent(textWithContact);
     const text = result.response.text();
     const clean = text.replace(/```json|```/g, "").trim();
     const parsed = JSON.parse(clean);
+    parsed.aiText = removePhoneNumbers(parsed.aiText)
+  .replace(/📍/g, "\n📍")
+  .replace(/🕒/g, "\n🕒")
+  .replace(/📝/g, "\n📝")
+  .replace(/💰/g, "\n💰")
+  .replace(/📩/g, "\n📩")
+  .trim();   
     return parsed as AIResult;
   } catch (error) {
     console.error("Помилка Gemini:", error);

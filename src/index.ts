@@ -2,6 +2,8 @@ import { Bot, Context, session, SessionFlavor } from "grammy";
 import dotenv from "dotenv";
 import { SessionData, initialSession } from "./session";
 import { processWithAI } from "./services/ai";
+import { connectDB } from "./services/db";
+import { publishToChat, publishToChannel } from "./services/telegram";
 
 dotenv.config();
 
@@ -10,6 +12,10 @@ type MyContext = Context & SessionFlavor<SessionData>;
 const bot = new Bot<MyContext>(process.env.BOT_TOKEN!);
 
 bot.use(session({ initial: initialSession }));
+
+bot.catch((err) => {
+  console.error("Помилка бота:", err.message);
+});
 
 bot.command("start", (ctx) => {
   ctx.session.step = "idle";
@@ -77,21 +83,22 @@ bot.on("message:text", async (ctx) => {
       return;
     }
     await ctx.reply("⏳ Обробляю...");
-const aiResult = await processWithAI(text);
+    const username = ctx.from?.username;
+    const aiResult = await processWithAI(text, username);
 
-if (!aiResult) {
-  await ctx.reply("⚠️ Не вдалося обробити текст. Спробуй ще раз.");
-  return;
-}
+    if (!aiResult) {
+      await ctx.reply("⚠️ Не вдалося обробити текст. Спробуй ще раз.");
+      return;
+    }
 
-ctx.session.aiText = aiResult.aiText;
-ctx.session.searchFrom = aiResult.searchFrom;
-ctx.session.searchTo = aiResult.searchTo;
-ctx.session.isRoundTrip = aiResult.isRoundTrip;
-ctx.session.step = "idle";
+    ctx.session.aiText = aiResult.aiText;
+    ctx.session.searchFrom = aiResult.searchFrom;
+    ctx.session.searchTo = aiResult.searchTo;
+    ctx.session.isRoundTrip = aiResult.isRoundTrip;
+    ctx.session.schedule = aiResult.schedule;
+    ctx.session.step = "idle";
 
-      await ctx.reply("✅ Текст отримано!\n\n" + aiResult.aiText, {
-
+    await ctx.reply("✅ Текст отримано!\n\n" + aiResult.aiText, {
       reply_markup: {
         inline_keyboard: [
           [{ text: "✅ Підтвердити", callback_data: "confirm" }],
@@ -101,6 +108,39 @@ ctx.session.step = "idle";
       }
     });
   }
+});
+
+bot.callbackQuery("confirm", async (ctx) => {
+  await ctx.answerCallbackQuery();
+
+  if (ctx.session.action === "publish") {
+    await ctx.reply("⏳ Публікую оголошення...");
+
+    const text = ctx.session.aiText!;
+    const chatMsgId = await publishToChat(bot.api, text);
+    const channelMsgId = await publishToChannel(bot.api, text);
+
+    await ctx.reply("✅ Оголошення опубліковано!", {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "👀 Моє оголошення в каналі", url: "https://t.me/" + process.env.CHANNEL_ID?.replace("@", "") + "/" + channelMsgId }],
+          [{ text: "🏠 Головне меню", callback_data: "menu" }]
+        ]
+      }
+    });
+  }
+});
+
+bot.callbackQuery("menu", async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await ctx.reply("Що хочеш зробити?", {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "📝 Опублікувати оголошення", callback_data: "publish" }],
+        [{ text: "🔍 Тільки пошук", callback_data: "search" }]
+      ]
+    }
+  });
 });
 
 bot.callbackQuery("cancel", async (ctx) => {
@@ -117,6 +157,7 @@ bot.callbackQuery("cancel", async (ctx) => {
 });
 
 const start = async () => {
+  await connectDB();
   bot.start();
   console.log("Бот запущено! ✅");
 };
