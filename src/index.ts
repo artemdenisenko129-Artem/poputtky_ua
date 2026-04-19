@@ -1,6 +1,7 @@
 import { Bot, Context, session, SessionFlavor } from "grammy";
 import dotenv from "dotenv";
 import { SessionData, initialSession } from "./session";
+import { processWithAI } from "./services/ai";
 
 dotenv.config();
 
@@ -75,8 +76,20 @@ bot.on("message:text", async (ctx) => {
       await ctx.reply("⚠️ Текст занадто довгий! Максимум 300 символів. Спробуй ще раз.");
       return;
     }
-    ctx.session.aiText = text;
-    ctx.session.step = "idle";
+    await ctx.reply("⏳ Обробляю...");
+const aiResult = await processWithAI(text);
+
+if (!aiResult) {
+  await ctx.reply("⚠️ Не вдалося обробити текст. Спробуй ще раз.");
+  return;
+}
+
+ctx.session.aiText = aiResult.aiText;
+ctx.session.searchFrom = aiResult.searchFrom;
+ctx.session.searchTo = aiResult.searchTo;
+ctx.session.isRoundTrip = aiResult.isRoundTrip;
+ctx.session.step = "idle";
+
     await ctx.reply("✅ Текст отримано!\n\n" + text, {
       reply_markup: {
         inline_keyboard: [
