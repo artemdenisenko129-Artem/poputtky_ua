@@ -6,6 +6,7 @@ export interface SessionData {
   searchFrom: string | null;
   searchTo: string | null;
   isRoundTrip: boolean;
+  schedule: string | null;
   searchOffset: number;
 }
 
@@ -18,6 +19,7 @@ export function initialSession(): SessionData {
     searchFrom: null,
     searchTo: null,
     isRoundTrip: false,
+    schedule: null,
     searchOffset: 0,
   };
 }

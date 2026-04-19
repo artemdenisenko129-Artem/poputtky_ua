@@ -90,7 +90,8 @@ ctx.session.searchTo = aiResult.searchTo;
 ctx.session.isRoundTrip = aiResult.isRoundTrip;
 ctx.session.step = "idle";
 
-    await ctx.reply("✅ Текст отримано!\n\n" + text, {
+      await ctx.reply("✅ Текст отримано!\n\n" + aiResult.aiText, {
+
       reply_markup: {
         inline_keyboard: [
           [{ text: "✅ Підтвердити", callback_data: "confirm" }],
