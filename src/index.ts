@@ -4,6 +4,7 @@ import { SessionData, initialSession } from "./session";
 import { processWithAI } from "./services/ai";
 import { connectDB, Announcement } from "./services/db";
 import { publishToChat, publishToChannel } from "./services/telegram";
+import { searchAnnouncements } from "./services/search";
 
 dotenv.config();
 
@@ -49,12 +50,12 @@ bot.callbackQuery("search", async (ctx) => {
   ctx.session.action = "search";
   ctx.session.step = "waiting_role";
   await ctx.answerCallbackQuery();
-  await ctx.reply("Ти водій чи пасажир?", {
+  await ctx.reply("Кого шукаєш — водія чи пасажира?\n\nВибери СВОЮ роль:", {
     reply_markup: {
       inline_keyboard: [
         [
-          { text: "🚗 Я Водій", callback_data: "role_driver" },
-          { text: "💺 Я Пасажир", callback_data: "role_passenger" }
+          { text: "🚗 Я Водій (шукаю пасажирів)", callback_data: "role_driver" },
+          { text: "💺 Я Пасажир (шукаю водіїв)", callback_data: "role_passenger" }
         ]
       ]
     }
@@ -98,14 +99,20 @@ bot.on("message:text", async (ctx) => {
     ctx.session.schedule = aiResult.schedule;
     ctx.session.step = "idle";
 
-    await ctx.reply("✅ Текст отримано!\n\n" + aiResult.aiText, {
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "✅ Підтвердити", callback_data: "confirm" }],
+    const buttons = ctx.session.action === "search"
+      ? [
+          [{ text: "🔍 Шукати", callback_data: "confirm" }],
           [{ text: "✏️ Редагувати", callback_data: "edit" }],
           [{ text: "🗑 Скасувати", callback_data: "cancel" }]
         ]
-      }
+      : [
+          [{ text: "✅ Підтвердити", callback_data: "confirm" }],
+          [{ text: "✏️ Редагувати", callback_data: "edit" }],
+          [{ text: "🗑 Скасувати", callback_data: "cancel" }]
+        ];
+
+    await ctx.reply("✅ Текст отримано!\n\n" + aiResult.aiText, {
+      reply_markup: { inline_keyboard: buttons }
     });
   }
 });
@@ -120,7 +127,6 @@ bot.callbackQuery("confirm", async (ctx) => {
     const chatMsgId = await publishToChat(bot.api, text);
     const channelMsgId = await publishToChannel(bot.api, text);
 
-    // Зберігаємо оголошення в MongoDB
     try {
       await Announcement.create({
         telegramUserId: ctx.from?.id,
@@ -134,7 +140,6 @@ bot.callbackQuery("confirm", async (ctx) => {
         channelMessageId: channelMsgId,
       });
 
-      // Якщо двосторонній маршрут — створюємо ще один запис у зворотному напрямку
       if (ctx.session.isRoundTrip) {
         await Announcement.create({
           telegramUserId: ctx.from?.id,
@@ -158,6 +163,49 @@ bot.callbackQuery("confirm", async (ctx) => {
       reply_markup: {
         inline_keyboard: [
           [{ text: "👀 Моє оголошення в каналі", url: "https://t.me/" + process.env.CHANNEL_ID?.replace("@", "") + "/" + channelMsgId }],
+          [{ text: "🏠 Головне меню", callback_data: "menu" }]
+        ]
+      }
+    });
+  }
+
+  if (ctx.session.action === "search") {
+    await ctx.reply("⏳ Шукаю попутників...");
+
+    const { results, total } = await searchAnnouncements({
+      userId: ctx.from!.id,
+      role: ctx.session.role!,
+      searchFrom: ctx.session.searchFrom!,
+      searchTo: ctx.session.searchTo!,
+      offset: 0,
+      limit: 5,
+    });
+
+    if (total === 0) {
+      await ctx.reply("😔 Поки попутників за цим маршрутом не знайдено.\n\nСпробуй пізніше — нові оголошення з'являються щодня.", {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "📢 Перейти в канал", url: "https://t.me/" + process.env.CHANNEL_ID?.replace("@", "") }],
+            [{ text: "🏠 Головне меню", callback_data: "menu" }]
+          ]
+        }
+      });
+      return;
+    }
+
+    const oppositeRoleText = ctx.session.role === "driver" ? "пасажирів" : "водіїв";
+    await ctx.reply(`🔍 Знайдено ${total} ${oppositeRoleText}. Показую ${Math.min(results.length, 5)} найновіших:`);
+
+    for (const ann of results) {
+      const userLink = ann.telegramUsername
+        ? `\n\n📩 Зв'язатись: @${ann.telegramUsername}`
+        : "";
+      await ctx.reply((ann.aiText || "") + userLink);
+    }
+
+    await ctx.reply("Що далі?", {
+      reply_markup: {
+        inline_keyboard: [
           [{ text: "🏠 Головне меню", callback_data: "menu" }]
         ]
       }
