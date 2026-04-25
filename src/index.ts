@@ -2,7 +2,7 @@ import { Bot, Context, session, SessionFlavor } from "grammy";
 import dotenv from "dotenv";
 import { SessionData, initialSession } from "./session";
 import { processWithAI } from "./services/ai";
-import { connectDB } from "./services/db";
+import { connectDB, Announcement } from "./services/db";
 import { publishToChat, publishToChannel } from "./services/telegram";
 
 dotenv.config();
@@ -119,6 +119,40 @@ bot.callbackQuery("confirm", async (ctx) => {
     const text = ctx.session.aiText!;
     const chatMsgId = await publishToChat(bot.api, text);
     const channelMsgId = await publishToChannel(bot.api, text);
+
+    // Зберігаємо оголошення в MongoDB
+    try {
+      await Announcement.create({
+        telegramUserId: ctx.from?.id,
+        telegramUsername: ctx.from?.username,
+        role: ctx.session.role,
+        aiText: ctx.session.aiText,
+        searchFrom: ctx.session.searchFrom,
+        searchTo: ctx.session.searchTo,
+        isRoundTrip: ctx.session.isRoundTrip,
+        chatMessageId: chatMsgId,
+        channelMessageId: channelMsgId,
+      });
+
+      // Якщо двосторонній маршрут — створюємо ще один запис у зворотному напрямку
+      if (ctx.session.isRoundTrip) {
+        await Announcement.create({
+          telegramUserId: ctx.from?.id,
+          telegramUsername: ctx.from?.username,
+          role: ctx.session.role,
+          aiText: ctx.session.aiText,
+          searchFrom: ctx.session.searchTo,
+          searchTo: ctx.session.searchFrom,
+          isRoundTrip: true,
+          chatMessageId: chatMsgId,
+          channelMessageId: channelMsgId,
+        });
+      }
+
+      console.log("✅ Оголошення збережено в БД");
+    } catch (error) {
+      console.error("❌ Помилка збереження в БД:", error);
+    }
 
     await ctx.reply("✅ Оголошення опубліковано!", {
       reply_markup: {
