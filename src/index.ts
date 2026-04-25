@@ -117,9 +117,23 @@ bot.on("message:text", async (ctx) => {
   }
 });
 
+// Допоміжна функція для показу результатів пошуку
+const showSearchResults = async (ctx: any, role: string, results: any[], total: number) => {
+  const oppositeRoleText = role === "driver" ? "пасажирів" : "водіїв";
+  await ctx.reply(`🔍 Знайдено ${total} ${oppositeRoleText}. Показую ${Math.min(results.length, 5)} найновіших:`);
+
+  for (const ann of results) {
+    const userLink = ann.telegramUsername
+      ? `\n\n📩 Зв'язатись: @${ann.telegramUsername}`
+      : "";
+    await ctx.reply((ann.aiText || "") + userLink);
+  }
+};
+
 bot.callbackQuery("confirm", async (ctx) => {
   await ctx.answerCallbackQuery();
 
+  // ============ ПУБЛІКАЦІЯ ============
   if (ctx.session.action === "publish") {
     await ctx.reply("⏳ Публікую оголошення...");
 
@@ -162,13 +176,44 @@ bot.callbackQuery("confirm", async (ctx) => {
     await ctx.reply("✅ Оголошення опубліковано!", {
       reply_markup: {
         inline_keyboard: [
-          [{ text: "👀 Моє оголошення в каналі", url: "https://t.me/" + process.env.CHANNEL_ID?.replace("@", "") + "/" + channelMsgId }],
-          [{ text: "🏠 Головне меню", callback_data: "menu" }]
+          [{ text: "👀 Моє оголошення в каналі", url: "https://t.me/" + process.env.CHANNEL_ID?.replace("@", "") + "/" + channelMsgId }]
         ]
       }
     });
+
+    // 🆕 АВТОПОШУК — шукаємо чи вже є попутники
+    await ctx.reply("🔎 Перевіряю чи є попутники за твоїм маршрутом...");
+
+    const { results, total } = await searchAnnouncements({
+      userId: ctx.from!.id,
+      role: ctx.session.role!,
+      searchFrom: ctx.session.searchFrom!,
+      searchTo: ctx.session.searchTo!,
+      offset: 0,
+      limit: 5,
+    });
+
+    if (total === 0) {
+      await ctx.reply("😔 Поки за твоїм маршрутом нікого немає. Чекай — нові оголошення з'являться найближчим часом!", {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🏠 Головне меню", callback_data: "menu" }]
+          ]
+        }
+      });
+    } else {
+      await showSearchResults(ctx, ctx.session.role!, results, total);
+      await ctx.reply("Що далі?", {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🏠 Головне меню", callback_data: "menu" }]
+          ]
+        }
+      });
+    }
   }
 
+  // ============ ПОШУК ============
   if (ctx.session.action === "search") {
     await ctx.reply("⏳ Шукаю попутників...");
 
@@ -193,16 +238,7 @@ bot.callbackQuery("confirm", async (ctx) => {
       return;
     }
 
-    const oppositeRoleText = ctx.session.role === "driver" ? "пасажирів" : "водіїв";
-    await ctx.reply(`🔍 Знайдено ${total} ${oppositeRoleText}. Показую ${Math.min(results.length, 5)} найновіших:`);
-
-    for (const ann of results) {
-      const userLink = ann.telegramUsername
-        ? `\n\n📩 Зв'язатись: @${ann.telegramUsername}`
-        : "";
-      await ctx.reply((ann.aiText || "") + userLink);
-    }
-
+    await showSearchResults(ctx, ctx.session.role!, results, total);
     await ctx.reply("Що далі?", {
       reply_markup: {
         inline_keyboard: [
