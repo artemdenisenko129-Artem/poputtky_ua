@@ -1,3 +1,4 @@
+import http from "http";
 import { Bot, Context, session, SessionFlavor } from "grammy";
 import dotenv from "dotenv";
 import { SessionData, initialSession } from "./session";
@@ -281,3 +282,12 @@ const start = async () => {
 };
 
 start();
+
+// HTTP сервер для health checks (потрібен для хостингу)
+const port = parseInt(process.env.PORT || "8080");
+http.createServer((_, res) => {
+  res.writeHead(200, { "Content-Type": "text/plain" });
+  res.end("Bot is running! 🤖");
+}).listen(port, () => {
+  console.log(`🌐 HTTP сервер на порту ${port}`);
+});
